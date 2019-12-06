@@ -1,0 +1,138 @@
+//2019-12-06 Edison Bustos
+
+#require "HTS221.device.lib.nut:2.0.2"
+#require "LPS22HB.device.lib.nut:2.0.0"
+#require "LIS3DH.device.lib.nut:2.0.0"
+
+// Define constants
+const sleepTime = 10;
+
+// Declare Global Variables
+tempSensor <- null;
+pressureSensor <- null;
+led <- null
+accel <- null
+SHT30 <- null;
+
+// Define functions
+function takeReading(){
+    local conditions = {};
+    local reading = tempSensor.read();
+    conditions.temp <- reading.temperature;
+    conditions.humid <- reading.humidity;
+    reading = pressureSensor.read();
+    conditions.press <- reading.pressure;
+
+    local val = accel.getAccel();
+    conditions.acelx <-val.x;
+    conditions.acely <-val.y;
+    conditions.acelz <-val.z;
+
+    //server.log("AcelX:" + conditions.acelx + " G");
+    //server.log("The voltage is: " + hardware.voltage());
+
+    local sht30 = SHT30.getTemperature();
+    //server.log(sht30.temp)
+    conditions.sht30temp <- sht30.temp;
+    conditions.sht30humid <- sht30.hum;
+
+    //Datetime
+    local dt = date()
+    local stringdt = format("%d-%02d-%02d %02d:%02d:%02d UTC",dt.year,dt.month+1,dt.day,dt.hour,dt.min,dt.sec);
+    //server.log(stringdt);
+    conditions.datetime <- stringdt;
+
+    // Send 'conditions' to the agent
+    agent.send("reading", conditions);
+
+    // Set the imp to sleep when idle, ie. program complete
+    imp.onidle(function() {
+        server.sleepfor(sleepTime);
+    });
+    
+    //imp.sleep(1);
+    //takeReading();
+}
+
+//http://techgurka.blogspot.com/2013/04/quick-temperature-graph-using-electric.html
+//modified from temp102 to SHT3X
+
+class TemperatureSensor
+{
+    i2cPort = null;
+    i2cAddress = null;
+    constructor(add0)
+    {
+        // Configure I2C bus on pins 8 & 9
+        i2cPort = hardware.i2c89;
+        i2cPort.configure(CLOCK_SPEED_10_KHZ);
+
+        i2cAddress = (add0 ? 0x45 : 0x44) << 1;
+        //server.log(format("i2cAddress=%x", i2cAddress));
+        i2cPort.write(i2cAddress, "");
+    }
+    // Retrieve temperature (from local sensor) in deg F
+    function getTemperature()
+    {
+        local temperature = -999.9;
+        local humidity = -1.0;
+        local volt = 0.0;
+        local ret={};
+        
+        i2cPort.write(i2cAddress, "\x2c"+"\x06"); // El comando debe ir en 2 bytes
+        imp.sleep(1);        
+    
+        local data = i2cPort.read(i2cAddress, "", 6); //Lee los 6 bytes de respuesta
+
+        if (data == null)
+        {
+            server.log("Error reading SHT3X:"+i2cPort.readerror());
+            return null;
+        }
+
+        //Check data
+        //foreach (index,v in data){
+        //    server.log(format("[%d]=%d",index,v));
+        //}
+
+        //Convert the data
+        local temp = data[0]*256.0 + data[1];
+        temperature = -45.0 + (175.0 *temp/65535.0);
+        humidity = (100.0*(data[3]*256+data[4]))/65535.0
+        volt = hardware.voltage();
+        
+        server.log(format("%3.1fC %3.1f%% (%2.1fv)", temperature, humidity, volt));
+
+        ret.temp <- temperature;
+        ret.hum <- humidity;
+        return ret;
+    }
+}
+
+
+// Start of program
+
+// Configure I2C bus for sensors
+local i2c = hardware.i2c89;
+i2c.configure(CLOCK_SPEED_400_KHZ);
+
+tempSensor = HTS221(i2c);
+tempSensor.setMode(HTS221_MODE.ONE_SHOT);
+
+pressureSensor = LPS22HB(i2c);
+pressureSensor.softReset();
+
+accel <- LIS3DH(i2c, 0x32);
+
+// Sets 'Accelerometer running at 100Hz'
+local rate = accel.setDataRate(90);
+//server.log(format("Accelerometer running at %dHz", rate));
+
+//local val = accel.getAccel();
+//server.log(format("Acceleration (G): (%0.2f, %0.2f, %0.2f)", val.x, val.y, val.z));
+
+// Instantiate SHT30 sensor
+SHT30 = TemperatureSensor(false);
+
+// Take a reading
+takeReading(); 

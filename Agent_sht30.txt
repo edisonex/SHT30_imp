@@ -1,0 +1,222 @@
+//2019-12-06 Edison Bustos
+#require "Rocky.class.nut:1.3.0"
+
+// GLOBALS
+local api = null;
+local savedData = null;
+
+// CONSTANTS
+const htmlString = @"
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Estacion Meteorologica +</title>
+        <link rel='stylesheet' href='https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css'>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                <meta http-equiv='refresh' content='5'>
+        <style>
+            .center { margin-left: auto; margin-right: auto; margin-bottom: auto; margin-top: auto; }
+        </style>
+    </head>
+    <body>
+        <div class='container'>
+            <h2 class='text-left'>Estacion Meteorologica Plus</h2>
+            <div class='current-status'>
+                <h4 class='datetime-status'>Fecha: <span></span> </h4>
+                <h4 class='temp-status'>Temperatura: <span></span>&deg;C</h4>
+                <h4 class='humid-status'>Humedad   : <span></span>&#37;</h4>
+                <h4 class='press-status'>Presion   : <span></span> mBar</h4>
+                <h4 class='acelx-status'>Aceleracion X   : <span></span> G</h4>
+                <h4 class='acely-status'>Aceleracion Y   : <span></span> G</h4>
+                <h4 class='acelz-status'>Aceleracion Z   : <span></span> G</h4>
+                <h4 class='sht30temp-status'>SHT30 Temperatura: <span></span>&deg;C</h4>
+                <h4 class='sht30humid-status'>SHT30 Humedad   : <span></span>&#37;</h4>
+                <h4 class='locale-status'>Location: <span></span></h4>
+            </div>
+            <br>
+            <div class='controls'>
+                <div class='update-button'>
+                    <form id='name-form'>
+                        <label>Update Location:</label>&nbsp;<input id='location'></input>
+                        <button type='submit' id='location-button'>Set Location</button>
+                    </form>
+                </div>
+            </div> <!-- controls -->
+            <br>
+            <small>From: %s</small>
+        </div>  <!-- container -->
+
+        <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js'></script>
+        <script>
+            var agenturl = '%s';
+            getState(updateReadout);
+            $('.update-button button').on('click', getStateInput);
+
+            function getStateInput(e){
+                e.preventDefault();
+                var place = document.getElementById('location').value;
+                setLocation(place);
+                $('#name-form').trigger('reset');
+            }
+
+            function updateReadout(data) {
+                $('.datetime-status span').text(data.datetime);
+                $('.temp-status span').text(data.temp);
+                $('.humid-status span').text(data.humid);
+                $('.press-status span').text(data.press);
+                $('.acelx-status span').text(data.acelx);
+                $('.acely-status span').text(data.acely);
+                $('.acelz-status span').text(data.acelz);
+                $('.sht30temp-status span').text(data.sht30temp);
+                $('.sht30humid-status span').text(data.sht30humid);
+                $('.locale-status span').text(data.locale);
+                setTimeout(function() {
+                    getState(updateReadout);
+                }, 60000);
+            }
+
+            function getState(callback) {
+                $.ajax({
+                    url : agenturl + '/state',
+                    type: 'GET',
+                    success : function(response) {
+                        if (callback && ('temp' in response)) {
+                            callback(response);
+                        }
+                    }
+                });
+            }
+
+            function setLocation(place) {
+                $.ajax({
+                    url : agenturl + '/location',
+                    type: 'POST',
+                    data: JSON.stringify({ 'location' : place }),
+                    success : function(response) {
+                        if ('locale' in response) {
+                            $('.locale-status span').text(response.locale);
+                        }
+                    }
+                });
+            }
+        </script>
+    </body>
+</html>
+";
+
+// FUNCTIONS
+function postReading(reading) {
+    if ("temp" in reading) {
+        savedData.temp = format("%.2f", reading.temp);
+    } else {
+        savedData.temp = "0.0";
+    }
+
+   if ("humid" in reading) {
+        savedData.humid = format("%.2f", reading.humid);
+    } else {
+        savedData.humid = "0.0";
+    }
+
+    if ("press" in reading) {
+        savedData.press = format("%.2f", reading.press);
+    } else {
+        savedData.press = "0.0";
+    }
+
+    if ("acelx" in reading) {
+        savedData.acelx = format("%.3f", reading.acelx);
+    } else {
+        savedData.acelx = "0.000";
+    }
+
+    if ("acely" in reading) {
+        savedData.acely = format("%.3f", reading.acely);
+    } else {
+        savedData.acely = "0.000";
+    }
+
+    if ("acelz" in reading) {
+        savedData.acelz = format("%.3f", reading.acelz);
+    } else {
+        savedData.acelz = "0.000";
+    }
+
+    if ("datetime" in reading) {
+        savedData.datetime = format("%s", reading.datetime);
+    } else {
+        savedData.datetime = "1970-03-24 11:45:00";
+    }
+
+    if ("sht30temp" in reading) {
+        savedData.sht30temp = format("%.2f", reading.sht30temp);
+    } else {
+        savedData.sht30temp = "0.0";
+    }
+
+   if ("sht30humid" in reading) {
+        savedData.sht30humid = format("%.2f", reading.sht30humid);
+    } else {
+        savedData.sht30humid = "0.0";
+    }
+
+    local result = server.save(savedData);
+    if (result != 0) server.error("Could not back up data");
+}
+
+// START OF PROGRAM
+
+// Instantiate objects
+api = Rocky();
+
+// Set up the app's API
+api.get("/", function(context) {
+    // Root request: just return standard web page HTML string
+    context.send(200, format(htmlString, http.agenturl(), http.agenturl()));
+});
+
+api.get("/state", function(context) {
+    // Request for data from /state endpoint
+    context.send(200, { temp = savedData.temp, humid = savedData.humid, press = savedData.press, acelx = savedData.acelx, acely = savedData.acely, acelz = savedData.acelz, sht30temp = savedData.sht30temp, sht30humid = savedData.sht30humid, datetime = savedData.datetime, locale = savedData.locale });
+});
+
+api.post("/location", function(context) {
+    // Sensor location string submission at the /location endpoint
+    local data = http.jsondecode(context.req.rawbody);
+    if ("location" in data) {
+        if (data.location != "") {
+            savedData.locale = data.location;
+            context.send(200, { locale = savedData.locale });
+            local result = server.save(savedData);
+            if (result != 0) server.error("Could not back up data");
+            return;
+        }
+    }
+
+    context.send(200, "OK");
+});
+
+// Set up the backup data
+savedData = {};
+savedData.temp <- "TBD";
+savedData.humid <- "TBD";
+savedData.press <- "TBD";
+savedData.acelx <- "TBD";
+savedData.acely <- "TBD";
+savedData.acelz <- "TBD";
+savedData.sht30temp <- "TBD";
+savedData.sht30humid <- "TBD";
+savedData.datetime <- "TBD";
+savedData.locale <- "Unknown";
+
+local backup = server.load();
+//local backup = {}; //requerido para limpiar
+if (backup.len() != 0) {
+    savedData = backup;
+} else {
+    local result = server.save(savedData);
+    if (result != 0) server.error("Could not back up data");
+}
+
+// Register the function to handle data messages from the device
+device.on("reading", postReading); 
