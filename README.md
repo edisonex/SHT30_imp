@@ -7,4 +7,4 @@ Notes
   red.  = V+
   black = gnd
 
-2)I connected (by soldering) the sensor cables just below to one of the grove I2C connectors
+2) I connected (by soldering) the sensor cables just below to one of the grove I2C connectors
